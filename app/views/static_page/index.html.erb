@@ -7,7 +7,8 @@
 	var map;
 	var bounds;
 	var last_infowindow;
-	var polylines = new Array();
+	var paths_map = new Array();
+	var partial_paths_map = new Object();
 
 	function initialize() {
 	  map = new google.maps.Map(document.getElementById("map"), {});
@@ -24,7 +25,9 @@
 
 	  marker.addListener('click', function(e) {
 	  	cleanPaths();
-	  	toggleRoutesFromTo(airport);
+	  	cleanPartialPaths();
+	  	toggleRoutesFrom(airport);
+	  	selected_airport = airport;
 		});
 
 	  bounds.extend(marker.position);
@@ -46,15 +49,17 @@
 		}
 	}
 
-	function toggleRoutesFromTo(airport) {
+	function toggleRoutesFrom(airport) {
 		Object.keys(flights).forEach(function(key, index) {
 			var element = flights[key];
-			if(element["origin"] == airport || element["destination"] == airport) {
+			//if(element["origin"] == airport || element["destination"] == airport) {
+			if(element["origin"] == airport) {
 				var points = new Array();
 
 				points.push({lat: airports[element["origin"]]["position"][0], lng: airports[element["origin"]]["position"][1]});
 				points.push({lat: airports[element["destination"]]["position"][0], lng: airports[element["destination"]]["position"][1]});
-				addPath(points, "000");
+				addPath(points, "#000");
+				addPartialPath(key);
 			}
 		});
 	}
@@ -69,13 +74,48 @@
 		});
 
 		flightPath.setMap(map);
-		polylines.push(flightPath);
+		paths_map.push(flightPath);
 	}
 
 	function cleanPaths() {
-		while(element = polylines.pop()) {
+		while(element = paths_map.pop()) {
 			element.setMap(null);
 		}
+	}
+
+	function addPartialPath(airplane) {
+		var flightPath = new google.maps.Polyline({
+			path: positions[airplane],
+			geodesic: true,
+			strokeColor: "#F00",
+			strokeOpacity: 1.0,
+			strokeWeight: 2
+		});
+
+		flightPath.setMap(map);
+		partial_paths_map[airplane] = flightPath;
+	}
+
+	function cleanPartialPaths() {
+		Object.keys(partial_paths_map).forEach(function(key, index) {
+			var element = partial_paths_map[key];
+			element.setMap(null);
+			delete partial_paths_map[key];
+		});
+	}
+
+	function toggleAirplanesFrom(airport) {
+		Object.keys(flights).forEach(function(key, index) {
+			var element = flights[key];
+			//if(element["origin"] == airport || element["destination"] == airport) {
+			if(element["origin"] == airport) {
+				var points = new Array();
+
+				points.push({lat: airports[element["origin"]]["position"][0], lng: airports[element["origin"]]["position"][1]});
+				points.push({lat: airports[element["destination"]]["position"][0], lng: airports[element["destination"]]["position"][1]});
+				addPath(points, "000");
+			}
+		});
 	}
 
 	google.maps.event.addDomListener(window, 'load', initialize);
@@ -85,7 +125,9 @@
 <script type="text/javascript">
 	var socket = io('wss://integracion-tarea-3.herokuapp.com', { path: '/flights' });
 	var airports = new Object();  // diccionario donde guardamos los aeropuertos
-	var flights = new Object();  // dicttionario donde guardamos los flights
+	var selected_airport;  // nos dice que aeropuerto esta seleccionado
+	var flights = new Object();  // diccionario donde guardamos los flights
+	var positions = new Object();  // diccionario donde guardamos las positions
 	var flights_add = new Object();
 	var positions_add = new Array();
 	
@@ -165,7 +207,7 @@
 
 				flights[key] = element;
 				// agregamos en el mapa
-				delete flights_add[key];;  // con esto eliminamos
+				delete flights_add[key];  // con esto eliminamos
 
 				addPositions();  // volvemos a agregar las posiciones pendientes
 			}
@@ -181,7 +223,16 @@
 			if(typeof flights[element["code"]] == "undefined") {
 				socket.emit('FLIGHTS');
 			} else {
+				if(typeof positions[element["code"]] == "undefined") {
+					positions[element["code"]] = new Array();  // guardaremos las posiciones
+				}
+				positions[element["code"]].push({lat: element["position"][0], lng: element["position"][1]});
 				// agregamos en el mapa
+				if(selected_airport == flights[element["code"]]["origin"]) {
+					console.log("agregamos partial path");
+					//addPartialPath(element["code"]);
+				}
+
 				object.splice(index, 1);  // con esto eliminamos
 			}
 		});
