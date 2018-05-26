@@ -1,0 +1,105 @@
+<h1>StaticPage#index</h1>
+<p>Find me in app/views/static_page/index.html.erb</p>
+
+<script type="text/javascript">
+	var socket = io('wss://integracion-tarea-3.herokuapp.com', { path: '/flights' });
+	var airports = new Object();  // diccionario donde guardamos los aeropuertos
+	var flights = new Object();  // dicttionario donde guardamos los flights
+	var flights_add = new Object();
+	var positions_add = new Array();
+	
+	socket.emit('AIRPORTS');
+	socket.emit('FLIGHTS');
+
+	socket.on('AIRPORTS', function (data) {
+		console.log("Evento de airports");
+		// console.log(data);
+
+		Object.keys(data).forEach(function(key, index) {
+			if(typeof airports[key] == "undefined") {
+				var element = data[key];
+
+				airports[key] = {"name": element["name"], "city": element["city"], "country": element["country"],
+												 "country_code": element["country_code"], "position": element["airport_position"]}
+				console.log(element);
+
+				// agregamos en el mapa
+			}
+		});
+
+		addFlights();
+	});
+
+	socket.on('FLIGHTS', function (data) {
+		console.log("Evento de flights");
+
+		data.forEach(function(element) {
+			if(typeof flights_add[element["code"]] != "undefined") {  // quizas algo fallo y no se agrego
+				console.log("Volvemos a ejecutar add flights");
+
+				addFlights();  // volvemos a intentar
+			}
+
+			if(typeof flights[element["code"]] == "undefined" && typeof flights_add[element["code"]] == "undefined") {
+				console.log("Agregando nuevo flight");
+				console.log(element);
+
+				var airport_origen = element["destination"]["airport_code"];
+				var airport_destino = element["origin"]["airport_code"];
+
+				var flight = {"airline": element["airline"], "origin": airport_origen, "destination": airport_destino,
+											"plane": element["plane"], "seats": element["seats"]};
+
+				flights_add[element["code"]] = flight;
+				addFlights();
+			}
+		});
+	});
+
+	socket.on('POSITION', function (data) {
+		console.log("Evento de position");
+
+		positions_add.push(data);
+		addPositions();
+	});
+	/* End del socket (receive) */
+
+
+	/* Funciones para iterar */
+	function addFlights() {
+		console.log("Funcion de add flights");
+
+		Object.keys(flights_add).forEach(function(key, index) {
+			var element = flights_add[key];
+
+			console.log("key: " + key + " origin: " + element);
+
+			if(typeof airports[element["origin"]] == "undefined" || typeof airports[element["destination"]] == "undefined") {  // si no estan los airports mandamos solicitud
+				socket.emit('AIRPORTS');
+			} else {
+				console.log("Agregando flight");
+
+				flights[key] = element;
+				// agregamos en el mapa
+				delete flights_add[key];;  // con esto eliminamos
+
+				addPositions();  // volvemos a agregar las posiciones pendientes
+			}
+		});
+	}
+
+	function addPositions() {
+		console.log("Funcion de add positions");
+
+		positions_add.forEach(function(element, index, object) {
+			console.log(element);
+
+			if(typeof flights[element["code"]] == "undefined") {
+				socket.emit('FLIGHTS');
+			} else {
+				// agregamos en el mapa
+				object.splice(index, 1);  // con esto eliminamos
+			}
+		});
+	}
+</script>
