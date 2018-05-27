@@ -2,11 +2,51 @@
 
 <div id="map" style="width:100%;height:400px;"></div>
 
+<script>
+	var RotateIcon = function(options){
+    this.options = options || {};
+    this.rImg = options.img || new Image();
+    this.rImg.src = this.rImg.src || this.options.url || '';
+    this.options.width = this.options.width || this.rImg.width || 52;
+    this.options.height = this.options.height || this.rImg.height || 60;
+    var canvas = document.createElement("canvas");
+    canvas.width = this.options.width;
+    canvas.height = this.options.height;
+    this.context = canvas.getContext("2d");
+    this.canvas = canvas;
+};
+RotateIcon.makeIcon = function(url) {
+    return new RotateIcon({url: url});
+};
+RotateIcon.prototype.setRotation = function(options){
+    var canvas = this.context,
+        angle = options.deg ? options.deg * Math.PI / 180:
+            options.rad,
+        centerX = this.options.width/2,
+        centerY = this.options.height/2;
+
+    canvas.clearRect(0, 0, this.options.width, this.options.height);
+    canvas.save();
+    canvas.translate(centerX, centerY);
+    canvas.rotate(angle);
+    canvas.translate(-centerX, -centerY);
+    canvas.drawImage(this.rImg, 0, 0);
+    canvas.restore();
+    return this;
+};
+RotateIcon.prototype.getUrl = function(){
+    return this.canvas.toDataURL('image/png');
+};
+</script>
+
 <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCz_Wjb3L5lz-OcKNVlYZgILZN5fS1bL9Y"></script>
 <script>
+	var include_destination = false;  // cuando pincho en un aeropuerto solo muestro solo ida o incluyo la vuelta?
 	var map;
 	var bounds;
 	var last_infowindow;
+	var selected_airport;  // nos dice que aeropuerto esta seleccionado
+	var aerplanes_map = new Object();
 	var paths_map = new Array();
 	var partial_paths_map = new Object();
 
@@ -49,11 +89,56 @@
 		}
 	}
 
+	function addAirplane(code) {
+		var positions_array = positions[code];
+		if(positions_array.length > 0) {
+			var flight = flights[code];
+			if(typeof aerplanes_map[code] == "undefined") {  // si no esta
+				console.log(positions_array.length);
+				console.log("first");
+				var rotation = Math.atan(Math.abs(airports[flight["destination"]]["position"][1]) - Math.abs(positions_array[positions_array.length - 1].lng) / Math.abs(airports[flight["destination"]]["position"][0]) - Math.abs(positions_array[positions_array.length - 1].lat))
+				console.log(rotation)
+				var image_url = RotateIcon.makeIcon('<%= image_url('airplane.png') %>').getUrl();
+
+				var image = {
+					path: 'M362.985,430.724l-10.248,51.234l62.332,57.969l-3.293,26.145 l-71.345-23.599l-2.001,13.069l-2.057-13.529l-71.278,22.928l-5.762-23.984l64.097-59.271l-8.913-51.359l0.858-114.43 l-21.945-11.338l-189.358,88.76l-1.18-32.262l213.344-180.08l0.875-107.436l7.973-32.005l7.642-12.054l7.377-3.958l9.238,3.65 l6.367,14.925l7.369,30.363v106.375l211.592,182.082l-1.496,32.247l-188.479-90.61l-21.616,10.087l-0.094,115.684',
+					scale: 0.0333,
+					strokeOpacity: 1,
+					color: 'black',
+					strokeWeight: 1,
+					rotation: 90,
+					anchor: new google.maps.Point(400, 400)
+				}
+
+				var marker = new google.maps.Marker({
+					position: positions_array[positions_array.length - 1],
+					title: code,
+					map: map,
+					icon: image
+				});
+
+				var infowindow = new google.maps.InfoWindow({
+					content: code + "<br/>" + flight["plane"] + "<br/>" + flight["seats"] + " asientos<br/>Aerolinea: "
+					+ flight["airline"] + "<br/>Posicion: " + positions_array[positions_array.length - 1].lat.toFixed(4) + ", "
+					+ positions_array[positions_array.length - 1].lng.toFixed(4)
+				});
+
+				marker.addListener('click', function() {
+					infowindow.open(map, marker);
+				});
+
+				aerplanes_map[code] = [marker, image_url];
+			} else {  // si ya esta
+				console.log("second");
+				aerplanes_map[code][0].setPosition(positions_array[positions_array.length - 1]);
+			}
+		}
+	}
+
 	function toggleRoutesFrom(airport) {
 		Object.keys(flights).forEach(function(key, index) {
 			var element = flights[key];
-			//if(element["origin"] == airport || element["destination"] == airport) {
-			if(element["origin"] == airport) {
+			if(element["origin"] == airport || (include_destination && element["destination"] == airport)) {
 				var points = new Array();
 
 				points.push({lat: airports[element["origin"]]["position"][0], lng: airports[element["origin"]]["position"][1]});
@@ -85,7 +170,7 @@
 
 	function addPartialPath(airplane) {
 		var flightPath = new google.maps.Polyline({
-			path: positions[airplane],
+			path: positions[airplane] || [],
 			geodesic: true,
 			strokeColor: "#F00",
 			strokeOpacity: 1.0,
@@ -94,6 +179,12 @@
 
 		flightPath.setMap(map);
 		partial_paths_map[airplane] = flightPath;
+	}
+
+	function extendPartialPath(airplane, location) {
+		var myLatLng = new google.maps.LatLng(location.lat, location.lng);
+		var paths = partial_paths_map[airplane].getPath();
+		paths.push(myLatLng);
 	}
 
 	function cleanPartialPaths() {
@@ -107,8 +198,7 @@
 	function toggleAirplanesFrom(airport) {
 		Object.keys(flights).forEach(function(key, index) {
 			var element = flights[key];
-			//if(element["origin"] == airport || element["destination"] == airport) {
-			if(element["origin"] == airport) {
+			if(element["origin"] == airport || (include_destination && element["destination"] == airport)) {
 				var points = new Array();
 
 				points.push({lat: airports[element["origin"]]["position"][0], lng: airports[element["origin"]]["position"][1]});
@@ -125,7 +215,6 @@
 <script type="text/javascript">
 	var socket = io('wss://integracion-tarea-3.herokuapp.com', { path: '/flights' });
 	var airports = new Object();  // diccionario donde guardamos los aeropuertos
-	var selected_airport;  // nos dice que aeropuerto esta seleccionado
 	var flights = new Object();  // diccionario donde guardamos los flights
 	var positions = new Object();  // diccionario donde guardamos las positions
 	var flights_add = new Object();
@@ -170,8 +259,8 @@
 				console.log("Agregando nuevo flight");
 				console.log(element);
 
-				var airport_origen = element["destination"]["airport_code"];
-				var airport_destino = element["origin"]["airport_code"];
+				var airport_origen = element["origin"]["airport_code"];
+				var airport_destino = element["destination"]["airport_code"];
 
 				var flight = {"airline": element["airline"], "origin": airport_origen, "destination": airport_destino,
 											"plane": element["plane"], "seats": element["seats"]};
@@ -226,11 +315,14 @@
 				if(typeof positions[element["code"]] == "undefined") {
 					positions[element["code"]] = new Array();  // guardaremos las posiciones
 				}
-				positions[element["code"]].push({lat: element["position"][0], lng: element["position"][1]});
+
+				var position = {lat: element["position"][0], lng: element["position"][1]}
+				positions[element["code"]].push(position);
+
 				// agregamos en el mapa
-				if(selected_airport == flights[element["code"]]["origin"]) {
-					console.log("agregamos partial path");
-					//addPartialPath(element["code"]);
+				if(selected_airport == flights[element["code"]]["origin"] || (include_destination && selected_airport == flights[element["code"]]["destination"])) {
+					extendPartialPath(element["code"], position);
+					addAirplane(element["code"]);
 				}
 
 				object.splice(index, 1);  // con esto eliminamos
