@@ -1,69 +1,13 @@
-<h1>Tarea 3 de Benjamin Regonesi</h1>
+<div class="box">
+	<h1><center>Tarea 3 de Benjamin Regonesi</center></h1>
 
-<div id="map" style="width:100%;height:400px;"></div>
+	<div id="map" style="width:100%; height:100%;"></div>
+</div>
 
-
-<script type="text/javascript">
-	function angleFromCoordinate(lat1, long1, lat2, long2) {
-		console.log(lat1);
-		console.log(long1);
-		console.log(lat2);
-		console.log(long2);
-
-    var dLon = (long2 - long1);
-
-    var y = Math.sin(dLon) * Math.cos(lat2);
-    var x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
-
-    var brng = Math.atan2(y, x);
-
-    var brng = brng * (180 / Math.PI);
-    brng = (brng + 360) % 360;
-
-    return brng;
-}
-</script>
+<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCz_Wjb3L5lz-OcKNVlYZgILZN5fS1bL9Y&libraries=geometry"></script>
 
 <script>
-	var RotateIcon = function(options){
-    this.options = options || {};
-    this.rImg = options.img || new Image();
-    this.rImg.src = this.rImg.src || this.options.url || '';
-    this.options.width = this.options.width || this.rImg.width || 52;
-    this.options.height = this.options.height || this.rImg.height || 60;
-    var canvas = document.createElement("canvas");
-    canvas.width = this.options.width;
-    canvas.height = this.options.height;
-    this.context = canvas.getContext("2d");
-    this.canvas = canvas;
-};
-RotateIcon.makeIcon = function(url) {
-    return new RotateIcon({url: url});
-};
-RotateIcon.prototype.setRotation = function(options){
-    var canvas = this.context,
-        angle = options.deg ? options.deg * Math.PI / 180:
-            options.rad,
-        centerX = this.options.width/2,
-        centerY = this.options.height/2;
-
-    canvas.clearRect(0, 0, this.options.width, this.options.height);
-    canvas.save();
-    canvas.translate(centerX, centerY);
-    canvas.rotate(angle);
-    canvas.translate(-centerX, -centerY);
-    canvas.drawImage(this.rImg, 0, 0);
-    canvas.restore();
-    return this;
-};
-RotateIcon.prototype.getUrl = function(){
-    return this.canvas.toDataURL('image/png');
-};
-</script>
-
-<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCz_Wjb3L5lz-OcKNVlYZgILZN5fS1bL9Y"></script>
-<script>
-	var include_destination = false;  // cuando pincho en un aeropuerto solo muestro solo ida o incluyo la vuelta?
+	var include_destination = true;  // cuando pincho en un aeropuerto solo muestro solo ida o incluyo la vuelta?
 	var map;
 	var bounds;
 	var last_infowindow;
@@ -73,7 +17,7 @@ RotateIcon.prototype.getUrl = function(){
 	var partial_paths_map = new Object();
 
 	function initialize() {
-	  map = new google.maps.Map(document.getElementById("map"), {});
+	  map = new google.maps.Map(document.getElementById("map"), { streetViewControl: false });
 	  bounds = new google.maps.LatLngBounds();
 	}
 
@@ -88,6 +32,7 @@ RotateIcon.prototype.getUrl = function(){
 	  marker.addListener('click', function(e) {
 	  	cleanPaths();
 	  	cleanPartialPaths();
+	  	cleanAirplanes();
 	  	toggleRoutesFrom(airport);
 	  	selected_airport = airport;
 		});
@@ -113,13 +58,13 @@ RotateIcon.prototype.getUrl = function(){
 
 	function addAirplane(code) {
 		var positions_array = positions[code];
-		if(positions_array.length > 0) {
+		if(typeof positions_array != "undefined" && positions_array.length > 0) {
 			var flight = flights[code];
 
 			var hacia;
 			var desde;
 
-			if(positions_array.length > 1) {
+			if(positions_array.length >= 2) {
 				hacia = new google.maps.LatLng(positions_array[positions_array.length - 1].lat, positions_array[positions_array.length - 1].lng);
 				desde = new google.maps.LatLng(positions_array[positions_array.length - 2].lat, positions_array[positions_array.length - 2].lng);
 			} else {
@@ -153,17 +98,29 @@ RotateIcon.prototype.getUrl = function(){
 				});
 
 				marker.addListener('click', function() {
+					if(last_infowindow) {
+						last_infowindow.close();
+					}
+
 					infowindow.open(map, marker);
+					last_infowindow = infowindow;
 				});
 
 				aerplanes_map[code] = [marker, image];
 			} else {  // si ya esta
-				console.log("second");
 				aerplanes_map[code][0].setPosition(positions_array[positions_array.length - 1]);
 				aerplanes_map[code][1].rotation = rotation;
 				aerplanes_map[code][0].setIcon(aerplanes_map[code][1]);
 			}
 		}
+	}
+
+	function cleanAirplanes() {
+		Object.keys(aerplanes_map).forEach(function(key, index) {
+			var element = aerplanes_map[key][0];
+			element.setMap(null);
+			delete aerplanes_map[key];
+		});
 	}
 
 	function toggleRoutesFrom(airport) {
@@ -176,6 +133,7 @@ RotateIcon.prototype.getUrl = function(){
 				points.push({lat: airports[element["destination"]]["position"][0], lng: airports[element["destination"]]["position"][1]});
 				addPath(points, "#000");
 				addPartialPath(key);
+				addAirplane(key);
 			}
 		});
 	}
@@ -223,19 +181,6 @@ RotateIcon.prototype.getUrl = function(){
 			var element = partial_paths_map[key];
 			element.setMap(null);
 			delete partial_paths_map[key];
-		});
-	}
-
-	function toggleAirplanesFrom(airport) {
-		Object.keys(flights).forEach(function(key, index) {
-			var element = flights[key];
-			if(element["origin"] == airport || (include_destination && element["destination"] == airport)) {
-				var points = new Array();
-
-				points.push({lat: airports[element["origin"]]["position"][0], lng: airports[element["origin"]]["position"][1]});
-				points.push({lat: airports[element["destination"]]["position"][0], lng: airports[element["destination"]]["position"][1]});
-				addPath(points, "000");
-			}
 		});
 	}
 
